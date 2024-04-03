@@ -1,15 +1,15 @@
 from pathlib import Path
+from typing import Callable
 import shutil
 from pprint import pprint
 
 
 #--------- Support Functions ---------#
 
-def _path_parts_valid(a_path:str|Path, include:list=[], exclude:list=[]) -> bool:
+def _path_parts_valid(a_path:Path, include:list=[], exclude:list=[]) -> bool:
     """Determine if all of the individual parts in a path match none of the `exclude` 
     glob patterns first (if exclusions provided), and then at least one of the `include` 
     patterns (if provided). Return True if this is case, otherwise False."""
-    a_path = Path(a_path)                                               # ensure that a_path is a Path object
     if not include and not exclude:
         return True                                                     # if neither inclusions nor exclusions were provided, then immediately return True 
     for part in a_path.parts:
@@ -35,6 +35,8 @@ def is_dir_empty(a_path:Path) -> bool:
 
 def _handle_existing_filepath(filepath:Path, exists_action:str="ask") -> Path|None:
     """Check if the `filepath` exists, and apply the `exisits_action` to it if it does."""
+    valid_exists_actions = ('ask', 'rename', 'replace', 'skip')         # check if `exists_action` value is valid:
+    assert exists_action in valid_exists_actions, f'"{exists_action}" is not a valid action to handle exisiting files. Must be one of: {valid_exists_actions}'
     if filepath.is_file():                                              # if the file already exists, then handle it with `exists_action`                                               
         print(f'\nThe file path "{filepath}" already exisits.')
         # if the exists action is "ask", ask the user what to do for this file (modify the action based on input):
@@ -67,15 +69,12 @@ def _handle_existing_filepath(filepath:Path, exists_action:str="ask") -> Path|No
             return                                                      # if skip, return None
     return filepath                                                     # return the filepath
 
+def _get_paths(src:Path, dst:Path=None, exists_action:str="ask", include:list=[], exclude:list=[]) -> list[Path]:
+    """Get a recursive list of Path objects for all paths in a given directory path (`src`).
 
-#--------- Path Listing Functions ---------#
-
-def _get_paths(src_dir:str|Path, dst_dir:str|Path=None, exists_action:str="ask", include:list=[], exclude:list=[]):# -> list:
-    """Get a recursive list of Path objects for all paths in a given directory path (`src_dir`).
-
-    If a destination path is provided (`dst_dir`), then the list will instead contain tuples where 
-    the first items are the same (all paths in `src_dir`), and the second items paths made from 
-    replacing the parent portion of the source paths with the destination directory (`dst_dir`). 
+    If a destination path is provided (`dst`), then the list will instead contain tuples where 
+    the first items are the same (all paths in `src`), and the second items paths made from 
+    replacing the parent portion of the source paths with the destination directory (`dst`). 
     This can be used for functions which copy or move files from one directory to another.
     - If this is the case, then this function will also check for and apply the 
     `exists_action` to any destination file paths which already exist (existing dirs are ignored):
@@ -98,11 +97,10 @@ def _get_paths(src_dir:str|Path, dst_dir:str|Path=None, exists_action:str="ask",
     directories to contain the matching paths. However, if a path is a directory and 
     it matches an exclusion pattern, then it and none of its contents will be included.
     """
-    src = Path(src_dir)
-    dst = Path(dst_dir) if dst_dir else None                            # ensure that src_dir and dst_dir (if provided) are Path objects
     assert src.is_dir(), f'"{src}" is not an existing directory'        # ensure that src is an existing directory
     path_list = []                                                      # the list to store all valid paths, to be eventually returned
     parent_dirs = []                                                    # will be used to temporarily hold all non-empty directories
+    print(f'\nFinding/generating all paths from "{src}" which match the given parameters...\n')
     for src_p in src.rglob('*'):                                        # `rglob('*')` is an easy way to get all paths recursively within the directory
         rel_src_path = src_p.relative_to(src)                           # get the relative version of the source path (without `src` parent directory)
         if (src_p.is_file() or is_dir_empty(src_p)) and not _path_parts_valid(rel_src_path, include, exclude):
@@ -131,13 +129,49 @@ def _get_paths(src_dir:str|Path, dst_dir:str|Path=None, exists_action:str="ask",
             parent_dirs.remove(the_parent)
             path_list.append(the_parent)                                # if this current path's parent path is in the parent_dirs list, then remove it from that and add it to the path_list
     path_list.sort()
+    if not path_list:
+        print("[!] There are no paths here.\n")
+        return None                                                     # if there are no paths, return None
     return path_list                                                    # sort the path_list and return it
+
+def _get_path_tree_str(a_path:Path, parent_dir:Path, current_n:int=None, total_n:int=None):
+    """Get a string of the name of `a_path` with indentation corresponding to the number of parts it 
+    has relative to `parent_dir`. If called on each path in a list of directory paths, will print them 
+    as a tree. Can also provide the current path number and total number of all paths to print indices."""
+    idx_str = ''
+    if current_n and total_n:
+        index_str_len = len(str(total_n))                               # determine the number of digits of the total number of paths
+        idx_str = f"{str(current_n+1).zfill(index_str_len)}/{total_n}"  # create the string for the current index and pad it with zeroes so it's the same length as the number of paths in source 
+    rel_path = a_path.relative_to(parent_dir)
+    p_name = f'[{rel_path.name}]' if a_path.is_dir() else rel_path.name # if the path is a dir, surround it with square brackets
+    indent_str = '    ' * len(rel_path.parts)                           # each indent is 4 spaces, and the number of parts of the relative source path (without `parent_dir` path) determines the number of indents to print
+    return idx_str + indent_str + p_name
+
 
 #--------- Main File Functions ---------#
 
-def copy_move_dir(src:str|Path, dst:str|Path, move:bool=False, exists_action:str="ask", include:str=[], exclude:str=[]):
-    """Copy or move all files, directories, and sub-files/directories from a source directory (`src`), to a 
-    destination directory (`dst`).
+def display_dir(a_dir:str|Path, include:str=[], exclude:str=[]):
+    """Display a directory `dir` in the terminal. Recursively print all files/directoriess in a tree pattern.
+    May also pass in a list of strings with glob patterns to either `include` and/or `exclude`. Each individual 
+    part of each path in `dir` must match (for `include`) or not match (`exclude`) to be displayed."""
+    a_dir = Path(a_dir)                                                 # make path string into a Path object
+    dir_paths = _get_paths(a_dir, include=include, exclude=exclude)     # get a list of all paths in `dir`, applying inclusions/exclusions
+    if not dir_paths:
+        return
+    # Print out each path (with identation):
+    n_dirs = 0
+    for p in dir_paths:
+        print(_get_path_tree_str(p, a_dir))                             # print the relative path with indentation (for tree-looking output)
+        if p.is_dir():
+            n_dirs += 1                                                 # if path is a dir, increment number of dirs - `n_dirs`
+    # Print the total number of files and dirs:
+    n_files = len(dir_paths) - n_dirs
+    n_file_msg = f"are {n_files} files" if n_files != 1 else f"is {n_files} file"
+    n_dir_msg = f"{n_dirs} directories" if n_files != 1 else f"{n_dirs} directory"
+    print(f'\nThere {n_file_msg} and {n_dir_msg}.\n')
+
+def copy_move_dir(src:str|Path, dst:str|Path=None, move:bool=False, include:str=[], exclude:str=[], dst_path_exists:str='ask'):
+    """Recursively copy or move all paths from a source directory (`src`), to a destination directory (`dst`).
     
     # Arguments: 
     - `src` and `dst`: path strings specifying the source and destination to copy from / move to.
@@ -152,40 +186,30 @@ def copy_move_dir(src:str|Path, dst:str|Path, move:bool=False, exists_action:str
     - `include`: a lists of strings of a glob patterns which each individual part of the path must match in order to be included.
     - `exclude`: a lists of strings of a glob patterns which each individual part of the path must NOT match in order to be included.
     """
-    # 1) Check/setup source and destination directories and args:
-    valid_actions = ('ask', 'rename', 'replace', 'skip')                # check `exists_action` value is valid:
-    assert exists_action in valid_actions, f'"{exists_action}" is not a valid action. Must be one of: {valid_actions}'
+    # 1) Check/setup source and destination directories:
     src, dst = Path(src), Path(dst)                                     # make each path string into a Path object
-    assert src.is_dir(), f'"{src}" must be an existing directory'       # check if src is an existing directory, and throw error if not
     if not dst.is_dir():
-        print(f'\n"{dst}" is not an existing directory. Creating it now...')
-        dst.mkdir(parents=True)                                         # check if dst is an existing directory, and create it if not
-    # 2) Get list of all files and sub-dirs in source, determine the destination paths for each, and find and handle any existing paths:
-    print(f'\nFinding all paths in "{src}"...')
-    src_dst_paths = _get_paths(src, dst, exists_action, include, exclude)
-    if not src_dst_paths:
-        print(f"\nthere are no paths to {'move' if move else 'copy'}\n")
+        print(f'\n"{dst}" is not an existing destination directory. Creating it now...')
+        dst.mkdir(parents=True)                                         # check if `dst` is an existing directory, and create it if not
+    # 2) Get list of all files and dirs in source, determine the destination paths for each, and find and handle any existing ones:
+    print(f'\nFinding all paths in "{src}" which match the given parameters...\n')
+    all_paths = _get_paths(src, dst, dst_path_exists, include, exclude)
+    if not all_paths:
         return                                                          # if there are no paths, return immeditately
     # 3) Copy or move each file & dir from source to destination:
     print(f'\n{"Moving" if move else "Copying"} all files and directories from "{src}" to "{dst}":\n')
-    src_count = len(src_dst_paths)                                      # get the total count of all paths that will be moved
-    index_digit_len = len(str(src_count))                               # determine the number of digits of the number of paths in the source (used later for terminal output)
-    for i, paths in enumerate(src_dst_paths):
-        src_path, dst_path = paths
+    p_count = len(all_paths)                                            # get the total count of all paths
+    for i, p in enumerate(all_paths):
+        src_path, dst_path = p
         if src_path.is_file():
             if not move:
                 shutil.copy(src_path, dst_path)                         # if the source path is a file, copy it to the destination path
             else:
                 shutil.move(src_path, dst_path)                         # or move it from source to destination
-            path_name = dst_path.name                                   # set path_name for terminal display to be the name (final componenet) of the destination path
         elif src_path.is_dir():
             if not dst_path.is_dir():
                 dst_path.mkdir()                                        # if the source path is a directory and the destination dir path doesn't exist, create the directory at the destination
-            path_name = f"[{dst_path.name}]"                            # add sqaure brackets to name for directories
-        # Display file/dir that was copied/moved in a tree:
-        idx_str = f"{str(i+1).zfill(index_digit_len)}/{src_count}"      # create the string for the current index and pad it with zeroes so it's the same length as the number of paths in source 
-        indent_str = '    ' * len(src_path.relative_to(src).parts)      # each indent is 4 spaces, and the number of parts of the relative source path (without `src` directory path) determines the number of indents to print
-        print(idx_str + indent_str + path_name)
+        print(_get_path_tree_str(p, src, i, p_count))                   # print the relative path with index and indentation (for tree-looking output)
     print('\nDone!\n')
 
 def permanent_delete(a_path:str|Path, confirm:bool=True):
