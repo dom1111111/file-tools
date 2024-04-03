@@ -1,0 +1,10 @@
+dev_notes.md
+venv/
+*__pycache__/
+*.pyc
+
+# pytest
+pytest_cache/
+
+work_in_progress_scripts
+file_scrapyard
