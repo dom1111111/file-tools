@@ -69,6 +69,19 @@ def _handle_existing_filepath(filepath:Path, exists_action:str="ask") -> Path|No
             return                                                      # if skip, return None
     return filepath                                                     # return the filepath
 
+def _get_tup_if_dst(src_p:Path, src:Path, dst:Path=None, exists_action:str="ask") -> Path | tuple[Path, Path] | None:
+    """Convert a single path to a tuple of both source `src` and destination paths 
+    if a destination `dst` is provided (and handle if the destination path already 
+    exists), otherwise return the source path unchanged."""
+    if not dst:
+        return src_p                                                    # if no destination provided, then return source path as is
+    dst_p = dst / src_p.relative_to(src)                                # make the destination path by combining the destination directory + the relative source path
+    if src_p.is_file():                                                 # check for existing file paths (exisiting directories are ignored)
+        dst_p = _handle_existing_filepath(dst_p, exists_action)         # modify destination filepath if it exists 
+        if not dst_p:
+            return None                                                 # return None if destination path is None (result of "skip" exists_action)      
+    return (src_p, dst_p)                                               # return a tuple of both the original source path and the destination path
+
 def _get_paths(src:Path, dst:Path=None, exists_action:str="ask", include:list=[], exclude:list=[]) -> list[Path]:
     """Get a recursive list of Path objects for all paths in a given directory path (`src`).
 
@@ -99,35 +112,29 @@ def _get_paths(src:Path, dst:Path=None, exists_action:str="ask", include:list=[]
     """
     assert src.is_dir(), f'"{src}" is not an existing directory'        # ensure that src is an existing directory
     path_list = []                                                      # the list to store all valid paths, to be eventually returned
-    parent_dirs = []                                                    # will be used to temporarily hold all non-empty directories
     print(f'\nFinding/generating all paths from "{src}" which match the given parameters...\n')
     for src_p in src.rglob('*'):                                        # `rglob('*')` is an easy way to get all paths recursively within the directory
-        rel_src_path = src_p.relative_to(src)                           # get the relative version of the source path (without `src` parent directory)
-        if (src_p.is_file() or is_dir_empty(src_p)) and not _path_parts_valid(rel_src_path, include, exclude):
-            # Valid means all parts in the relative path match no exclusions and 
+        if not (src_p.is_file() or is_dir_empty(src_p)):
+            continue                                                    # if the source path is a not file or empty directory, skip it
+        if not _path_parts_valid(src_p.relative_to(src), include, exclude):
+            # valid means all parts in the relative path match no exclusions and 
             # at least one inclusion (or there aren't any exlusions/inclusions).
-            # If the path is a file or an empty directory, but not valid, skip it
-            continue
-        the_path = src_p
-        the_parent = src_p.parent
-        if dst:                                                         # if a destination directory was provided:
-            dst_p = dst / rel_src_path                                  # make the destination path by combining the destination directory + the relative source path
-            if src_p.is_file():
-                dst_p = _handle_existing_filepath(dst_p, exists_action) # modify destination filepath if it exists (exisiting directories are ignored)
-                if not dst_p:
-                    continue                                            # don't append paths if destination path is None (result of "skip" exists_action)      
-            the_path = (src_p, dst_p)                                   # change the_path to be a tuple of both the original source path + the destination path
-            the_parent = (src_p.parent, dst_p.parent)                   # and change the_parent in the same way 
-        if src_p.is_file() or is_dir_empty(src_p):
-            path_list.append(the_path)                                  # If the source path is a file or empty directory, append the path(s) to to path_list
-        else:
-            parent_dirs.append(the_path)                                # otherwise if a directory containing other paths, append the path(s) to parent_dirs list
-        # Non-empty directories are initially not added to path_list to prevent including directories 
-        # which may have all non-valid files/dirs in them. But they may be added later only if they 
-        # are the parents of existing valid paths, even if they themselves are not a valid match.
-        if the_parent in parent_dirs:
-            parent_dirs.remove(the_parent)
-            path_list.append(the_parent)                                # if this current path's parent path is in the parent_dirs list, then remove it from that and add it to the path_list
+            continue                                                    # if not valid, then skip this path
+        final_src_p = _get_tup_if_dst(src_p, src, dst, exists_action)   # if dst was provided, convert path to a tuple of both source and destination paths, checking/handling if the destination path existis
+        if final_src_p:
+            path_list.append(final_src_p)                               # add the valid file(s) or empty-directory(ies) to the list
+        # NOTE: Non-empty directories are initially not added to path_list to prevent including directories 
+        # which may have all non-valid paths in them. But they may now be added with the following code if they 
+        # are the parents of the current existing valid path (even if they themselves wouldn't be a valid match).
+        parent_p = src_p.parent
+        while True:
+            if parent_p == src:
+                break                                                   # if the parent path is the src, break loop
+            final_parent_p = _get_tup_if_dst(parent_p, src, dst, exists_action)
+            if (not final_parent_p) or (final_parent_p in path_list):
+                break                                                   # if parent path(s) already in the list, break loop 
+            path_list.append(final_parent_p)                            # if this current path's parent is not the src and not in the list, then add it
+            parent_p = parent_p.parent                                  # set parent_p to be this path's parent's parent for the next loop
     path_list.sort()
     if not path_list:
         print("[!] There are no paths here.\n")

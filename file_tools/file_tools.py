@@ -53,7 +53,6 @@ if __name__ == "__main__":
     # by commas into a list, and remove extra whitespace from each value:
     include = [s.strip() for s in (args.include).split(',')] if (hasattr(args, 'include') and args.include) else []
     exclude = [s.strip() for s in (args.exclude).split(',')] if (hasattr(args, 'exclude') and args.exclude) else []
-    print(include)
     # Apply args to function according to 'command':
     if args.command == 'list':
         ff.display_dir(args.source, include, exclude)
