@@ -12,7 +12,8 @@ main_action_subparsers = parser.add_subparsers(description="The file action to p
 
 # Delete subcommand:
 delete_parser = main_action_subparsers.add_parser('delete')
-delete_parser.add_argument('-nc', '--noconfirm', help="do not ask for confirmation before deletion")
+delete_parser.add_argument('source', help='the source directory to perform the action on', nargs='?', default=os.getcwd())
+delete_parser.add_argument('-nc', '--noconfirm', help="do not ask for confirmation before deletion", action='store_true')
 
 # List subcommand (root parent for other commands):
 list_parser = main_action_subparsers.add_parser('list')
@@ -29,7 +30,7 @@ copy_parser = main_action_subparsers.add_parser('copy', parents=[list_parser], a
     # `add_help=False` must be added to all parsers which use parents
 copy_parser.add_argument('destination', help='the destination directory that the source contents should be copied/moved to')
 copy_parser.add_argument('-x', '--exists', 
-    help='the action to perform if paths in the destination already exist', 
+    help='the action to perform if paths in the destination already exists', 
     choices=['ask', 'rename', 'replace', 'skip'],
     default='ask'
 )
@@ -57,8 +58,9 @@ if __name__ == "__main__":
     if args.command == 'list':
         ff.display_dir(args.source, include, exclude)
     elif args.command == 'copy':
-        ff.copy_move_dir(args.source, args.destination, False, include, exclude, args.exist)
+        ff.copy_move_dir(args.source, args.destination, False, include, exclude, args.exists)
     elif args.command == 'move':
-        ff.copy_move_dir(args.source, args.destination, True, include, exclude, args.exist)
+        ff.copy_move_dir(args.source, args.destination, True, include, exclude, args.exists)
     elif args.command == 'delete':
-        ff.permanent_delete(args.source, args.noconfirm)
+        ff.permanent_delete(args.source, not args.noconfirm)    # 'noconfirm' must be bool reversed for the function
+    print()

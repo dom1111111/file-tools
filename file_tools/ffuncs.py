@@ -1,7 +1,5 @@
 from pathlib import Path
-from typing import Callable
 import shutil
-from pprint import pprint
 
 
 #--------- Support Functions ---------#
@@ -112,7 +110,7 @@ def _get_paths(src:Path, dst:Path=None, exists_action:str="ask", include:list=[]
     """
     assert src.is_dir(), f'"{src}" is not an existing directory'        # ensure that src is an existing directory
     path_list = []                                                      # the list to store all valid paths, to be eventually returned
-    print(f'\nFinding/generating all paths from "{src}" which match the given parameters...\n')
+    print(f'\nFinding/generating all paths from "{src}" which match the given parameters...')
     for src_p in src.rglob('*'):                                        # `rglob('*')` is an easy way to get all paths recursively within the directory
         if not (src_p.is_file() or is_dir_empty(src_p)):
             continue                                                    # if the source path is a not file or empty directory, skip it
@@ -137,16 +135,18 @@ def _get_paths(src:Path, dst:Path=None, exists_action:str="ask", include:list=[]
             parent_p = parent_p.parent                                  # set parent_p to be this path's parent's parent for the next loop
     path_list.sort()
     if not path_list:
-        print("[!] There are no paths here.\n")
+        print("\n[!] There are no paths here.")
         return None                                                     # if there are no paths, return None
     return path_list                                                    # sort the path_list and return it
 
 def _get_path_tree_str(a_path:Path, parent_dir:Path, current_n:int=None, total_n:int=None):
     """Get a string of the name of `a_path` with indentation corresponding to the number of parts it 
-    has relative to `parent_dir`. If called on each path in a list of directory paths, will print them 
-    as a tree. Can also provide the current path number and total number of all paths to print indices."""
+    has relative to `parent_dir`. If this function is called on each path in a list of paths, and each 
+    value is printed, the display result will look like a path/directory tree. Can also provide the 
+    current path list number and total number of all paths to display indices (this asumes the first 
+    path starts at `0`, and will add +1 to each)."""
     idx_str = ''
-    if current_n and total_n:
+    if (current_n != None) and (total_n != None):
         index_str_len = len(str(total_n))                               # determine the number of digits of the total number of paths
         idx_str = f"{str(current_n+1).zfill(index_str_len)}/{total_n}"  # create the string for the current index and pad it with zeroes so it's the same length as the number of paths in source 
     rel_path = a_path.relative_to(parent_dir)
@@ -175,7 +175,7 @@ def display_dir(a_dir:str|Path, include:str=[], exclude:str=[]):
     n_files = len(dir_paths) - n_dirs
     n_file_msg = f"are {n_files} files" if n_files != 1 else f"is {n_files} file"
     n_dir_msg = f"{n_dirs} directories" if n_files != 1 else f"{n_dirs} directory"
-    print(f'\nThere {n_file_msg} and {n_dir_msg}.\n')
+    print(f'\nThere {n_file_msg} and {n_dir_msg}.')
 
 def copy_move_dir(src:str|Path, dst:str|Path=None, move:bool=False, include:str=[], exclude:str=[], dst_path_exists:str='ask'):
     """Recursively copy or move all paths from a source directory (`src`), to a destination directory (`dst`).
@@ -199,7 +199,6 @@ def copy_move_dir(src:str|Path, dst:str|Path=None, move:bool=False, include:str=
         print(f'\n"{dst}" is not an existing destination directory. Creating it now...')
         dst.mkdir(parents=True)                                         # check if `dst` is an existing directory, and create it if not
     # 2) Get list of all files and dirs in source, determine the destination paths for each, and find and handle any existing ones:
-    print(f'\nFinding all paths in "{src}" which match the given parameters...\n')
     all_paths = _get_paths(src, dst, dst_path_exists, include, exclude)
     if not all_paths:
         return                                                          # if there are no paths, return immeditately
@@ -216,8 +215,8 @@ def copy_move_dir(src:str|Path, dst:str|Path=None, move:bool=False, include:str=
         elif src_path.is_dir():
             if not dst_path.is_dir():
                 dst_path.mkdir()                                        # if the source path is a directory and the destination dir path doesn't exist, create the directory at the destination
-        print(_get_path_tree_str(p, src, i, p_count))                   # print the relative path with index and indentation (for tree-looking output)
-    print('\nDone!\n')
+        print(_get_path_tree_str(src_path, src, i, p_count))            # print the relative source path with index and indentation (for tree-looking output)
+    print('\nDone!')
 
 def permanent_delete(a_path:str|Path, confirm:bool=True):
     """Delete a file or directory (including anything within that directory).
@@ -228,11 +227,11 @@ def permanent_delete(a_path:str|Path, confirm:bool=True):
         print(f'\n"{a_path}" will be permanently deleted.')
         print('Are you sure you want to continue? (Y/y)')
         if input('> ').lower() != "y":                                  # if user didn't enter 'y', then abort operation
-            print('\nAborting delete. Nothing will be deleted\n')
+            print('\nAborting delete. Nothing will be deleted')
             return
     print(f'\nDeleting "{a_path}"...')
     if a_path.is_file():
         a_path.unlink()
     elif a_path.is_dir():
         shutil.rmtree(a_path)
-    print('\nDone!\n')
+    print('\nDone!')
